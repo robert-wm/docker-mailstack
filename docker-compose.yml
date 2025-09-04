@@ -1,0 +1,187 @@
+version: '3.9'
+
+services:
+  mariadb:
+    image: mariadb:10.11
+    container_name: mariadb
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: secureRootPass123!
+      MYSQL_DATABASE: ispconfig
+      MYSQL_USER: ispconfig
+      MYSQL_PASSWORD: ispconfigStrongPass!
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - mailnet
+
+  mail:
+    build: ./mail
+    container_name: mail
+    hostname: mail2.burger-system.de
+    restart: always
+    environment:
+      HOSTNAME: mail2.burger-system.de
+    ports:
+      - "20025:25"
+      - "20587:587"
+      - "20993:993"
+    depends_on:
+      - mariadb
+    volumes:
+      - mail_data:/var/mail
+      - mail_config:/etc/postfix
+      - dovecot_config:/etc/dovecot
+      - dkim_keys:/var/lib/rspamd/dkim
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    networks:
+      - mailnet
+
+  rspamd:
+    image: rspamd/rspamd:latest
+    container_name: rspamd
+    restart: always
+    ports:
+      - "11334:11334"
+    depends_on:
+      - redis
+    environment:
+      RSPAMD_PASSWORD: strongAdminPass
+    volumes:
+      - rspamd_data:/var/lib/rspamd
+      - ./rspamd/local.d:/etc/rspamd/local.d
+      - ./rspamd/override.d:/etc/rspamd/override.d
+      - dkim_keys:/var/lib/rspamd/dkim
+    networks:
+      - mailnet
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: always
+    volumes:
+      - redis_data:/data
+    networks:
+      - mailnet
+
+  ispconfig:
+    build: ./ispconfig
+    container_name: ispconfig
+    restart: always
+    ports:
+      - "50080:80"
+      - "58080:8080"
+      - "50443:443"
+    depends_on:
+      - mariadb
+    environment:
+      ISP_DB_HOST: mariadb
+      ISP_DB_USER: ispconfig
+      ISP_DB_PASS: ispconfigStrongPass!
+    volumes:
+      - ispconfig_data:/usr/local/ispconfig
+    networks:
+      - mailnet
+
+  roundcube:
+    image: roundcube/roundcubemail:latest
+    container_name: roundcube
+    restart: always
+    environment:
+      ROUNDCUBEMAIL_DEFAULT_HOST: ssl://mail2.burger-system.de
+      ROUNDCUBEMAIL_SMTP_SERVER: tls://mail2.burger-system.de
+      ROUNDCUBEMAIL_DB_TYPE: mysql
+      ROUNDCUBEMAIL_DB_HOST: mariadb
+      ROUNDCUBEMAIL_DB_USER: roundcube
+      ROUNDCUBEMAIL_DB_PASSWORD: roundcubeStrongPass!
+    depends_on:
+      - mariadb
+      - mail
+    volumes:
+      - roundcube_data:/var/www/html
+    networks:
+      - mailnet
+
+  sogo:
+    image: jenserat/sogo:latest
+    container_name: sogo
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - mail
+    environment:
+      SOGO_MAIL_SERVER: mail2.burger-system.de
+      SOGO_SIEVE_SERVER: sieve://mail2.burger-system.de:4190
+      SOGO_DB_TYPE: mariadb
+      SOGO_DB_HOST: mariadb
+      SOGO_DB_USER: sogo
+      SOGO_DB_PASS: your_password
+      SOGO_DB_NAME: sogo
+    volumes:
+      - sogo_data:/var/lib/sogo
+    ports:
+      - "20000:20000"
+    networks:
+      - mailnet
+
+  nginx:
+    image: nginx:1.25
+    container_name: nginx
+    restart: always
+    ports:
+      - "20080:80"
+      - "20443:443"
+    depends_on:
+      - ispconfig
+      - roundcube
+      - sogo
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ispconfig.conf:/etc/nginx/conf.d/ispconfig.conf:ro
+      - ./nginx/roundcube.conf:/etc/nginx/conf.d/roundcube.conf:ro
+      - ./nginx/sogo.conf:/etc/nginx/conf.d/sogo.conf:ro
+      - certs:/etc/letsencrypt
+    networks:
+      - mailnet
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    restart: always
+    volumes:
+      - certs:/etc/letsencrypt
+      - ./certbot/renew.sh:/renew.sh
+      - ./nginx:/var/www/html
+    entrypoint: ["sh", "/renew.sh"]
+    networks:
+      - mailnet
+
+  fail2ban:
+    build: ./fail2ban
+    container_name: fail2ban
+    restart: always
+    depends_on:
+      - mail
+    volumes:
+      - mail_logs:/var/log
+    networks:
+      - mailnet
+
+volumes:
+  mariadb_data:
+  mail_data:
+  mail_config:
+  dovecot_config:
+  ispconfig_data:
+  roundcube_data:
+  sogo_data:
+  certs:
+  mail_logs:
+  rspamd_data:
+  redis_data:
+  dkim_keys:
+
+networks:
+  mailnet:
+    driver: bridge
+
