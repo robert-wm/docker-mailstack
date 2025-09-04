@@ -80,6 +80,7 @@ services:
       ISP_DB_PASS: ispconfigStrongPass!
     volumes:
       - ispconfig_data:/usr/local/ispconfig
+      - ./ispconfig/server/lib/config:/usr/local/ispconfig/server/lib/config:ro
     networks:
       - mailnet
 

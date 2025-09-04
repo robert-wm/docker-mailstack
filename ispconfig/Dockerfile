@@ -24,6 +24,11 @@ COPY ispconfig-supervisord.conf /etc/supervisor/conf.d/ispconfig.conf
 COPY www.conf /etc/php/8.2/fpm/pool.d/www.conf
 COPY config.inc.php /usr/local/ispconfig/interface/lib/config.inc.php
 
+# ISPConfig server config files
+COPY server/lib/config/security.conf /usr/local/ispconfig/server/lib/config/security.conf
+COPY server/lib/config/ispconfig.conf /usr/local/ispconfig/server/lib/config/ispconfig.conf
+COPY server/lib/config/mysql_clientdb.conf /usr/local/ispconfig/server/lib/config/mysql_clientdb.conf
+
 # Nginx Config Volume wird über Docker-Compose eingebunden
 EXPOSE 80 443
 
